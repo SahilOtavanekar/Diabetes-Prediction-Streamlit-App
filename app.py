@@ -8,6 +8,7 @@ import pandas as pd
 import numpy as np
 import joblib
 import warnings
+import json
 warnings.filterwarnings('ignore')
 
 # Handle pyarrow compatibility issues
@@ -59,22 +60,24 @@ based on several health metrics. The model was trained on the Pima Indians Diabe
 **Note:** This is a prediction tool for educational purposes and should not replace professional medical advice.
 """)
 
-# Load model and scaler
+# Load model, scaler, and metadata
 @st.cache_resource
 def load_model():
-    """Load the trained model and scaler"""
+    """Load the trained model, scaler, and metadata"""
     try:
-        model = joblib.load('diabetes_model.pkl')
-        scaler = joblib.load('scaler.pkl')
-        return model, scaler
+        model = joblib.load('models/diabetes_model.pkl')
+        scaler = joblib.load('models/scaler.pkl')
+        with open('models/metadata.json', 'r') as f:
+            metadata = json.load(f)
+        return model, scaler, metadata
     except FileNotFoundError:
-        st.error("Model file not found! Please run 'python model.py' first to train the model.")
+        st.error("Model files not found! Please run 'python src/model.py' first to train the model.")
         st.stop()
     except Exception as e:
         st.error(f"Error loading model: {e}")
         st.stop()
 
-model, scaler = load_model()
+model, scaler, metadata = load_model()
 
 # Sidebar for user inputs
 st.sidebar.header("📊 Enter Health Metrics")
@@ -164,6 +167,17 @@ predict_button = st.sidebar.button("🔮 Predict", type="primary", use_container
 
 # Main content area
 if predict_button:
+    # Check for potentially invalid 0 values
+    zero_features = []
+    if glucose == 0: zero_features.append("Glucose")
+    if blood_pressure == 0: zero_features.append("Blood Pressure")
+    if skin_thickness == 0: zero_features.append("Skin Thickness")
+    if insulin == 0: zero_features.append("Insulin")
+    if bmi == 0: zero_features.append("BMI")
+    
+    if zero_features:
+        st.warning(f"⚠️ **Warning**: You entered 0 for: **{', '.join(zero_features)}**. In a medical context, a value of 0 for these metrics is usually impossible and indicates missing data. This may affect the prediction.")
+
     # Create a DataFrame with the input features
     input_data = pd.DataFrame({
         'Pregnancies': [pregnancies],
@@ -184,8 +198,11 @@ if predict_button:
     input_scaled = scaler.transform(input_data)
     
     # Make prediction
-    prediction = model.predict(input_scaled)[0]
     prediction_proba = model.predict_proba(input_scaled)[0]
+    
+    # Use optimal threshold from metadata if available
+    threshold = metadata.get('optimal_threshold', 0.5)
+    diabetic_prob = prediction_proba[1]
     
     # Display results
     st.markdown("---")
@@ -195,8 +212,12 @@ if predict_button:
     col1, col2 = st.columns(2)
     
     with col1:
-        if prediction == 1:
-            st.error("### Prediction: **Diabetic** ⚠️")
+        # Add Borderline confidence warning (e.g., probability within 10% of threshold)
+        if threshold - 0.10 <= diabetic_prob <= threshold + 0.10:
+            st.warning("### Prediction: **Borderline** ⚠️")
+            st.info("The model is moderately uncertain about the prediction. Please consult a healthcare professional for clinical evaluation.")
+        elif diabetic_prob >= threshold:
+            st.error("### Prediction: **Diabetic** 🛑")
             st.warning("The model predicts a high likelihood of diabetes. Please consult with a healthcare professional.")
         else:
             st.success("### Prediction: **Not Diabetic** ✅")
@@ -205,24 +226,42 @@ if predict_button:
     with col2:
         st.metric("Probability (Not Diabetic)", f"{prediction_proba[0]*100:.2f}%")
         st.metric("Probability (Diabetic)", f"{prediction_proba[1]*100:.2f}%")
+        st.caption(f"*Decision Threshold Used: {threshold*100:.1f}%*")
     
-    # Probability visualization
     st.markdown("---")
-    st.subheader("📊 Prediction Probabilities")
+    col_chart1, col_chart2 = st.columns(2)
     
-    prob_df = pd.DataFrame({
-        'Outcome': ['Not Diabetic', 'Diabetic'],
-        'Probability': [float(prediction_proba[0]*100), float(prediction_proba[1]*100)]
-    })
-    
-    # Convert to compatible types for charting (avoid pyarrow issues)
-    try:
-        prob_df['Probability'] = prob_df['Probability'].astype('float32')
-        st.bar_chart(prob_df.set_index('Outcome'))
-    except Exception:
-        # Fallback: display as text instead
-        st.write(f"**Not Diabetic:** {prediction_proba[0]*100:.2f}%")
-        st.write(f"**Diabetic:** {prediction_proba[1]*100:.2f}%")
+    with col_chart1:
+        # Probability visualization
+        st.subheader("📊 Probabilities")
+        prob_df = pd.DataFrame({
+            'Outcome': ['Not Diabetic', 'Diabetic'],
+            'Probability': [float(prediction_proba[0]*100), float(prediction_proba[1]*100)]
+        })
+        try:
+            prob_df['Probability'] = prob_df['Probability'].astype('float32')
+            st.bar_chart(prob_df.set_index('Outcome'))
+        except Exception:
+            st.write(f"**Not Diabetic:** {prediction_proba[0]*100:.2f}%")
+            st.write(f"**Diabetic:** {prediction_proba[1]*100:.2f}%")
+            
+    with col_chart2:
+        # Feature Importance Visualization
+        if 'feature_importance' in metadata:
+            st.subheader("💡 Feature Importance")
+            fi = metadata['feature_importance']
+            fi_df = pd.DataFrame({
+                'Feature': list(fi.keys()),
+                'Importance': list(fi.values())
+            }).sort_values('Importance', ascending=True)
+            
+            try:
+                st.bar_chart(fi_df.set_index('Feature'), horizontal=True)
+            except Exception:
+                # Fallback for older streamlit versions without horizontal support
+                st.bar_chart(fi_df.set_index('Feature'))
+                
+            st.caption("Shows which metrics generally have the most impact on predictions overall.")
 
 else:
     # Default message when app loads
@@ -236,14 +275,14 @@ else:
         'Feature': ['Pregnancies', 'Glucose', 'Blood Pressure', 'Skin Thickness', 
                    'Insulin', 'BMI', 'Diabetes Pedigree Function', 'Age'],
         'Description': [
-            'Number of times pregnant',
-            'Plasma glucose concentration (2 hours in oral glucose tolerance test)',
-            'Diastolic blood pressure (mm Hg)',
-            'Triceps skin fold thickness (mm)',
-            '2-Hour serum insulin (mu U/ml)',
-            'Body Mass Index (weight in kg/(height in m)²)',
-            'Diabetes pedigree function (scores likelihood based on family history)',
-            'Age in years'
+            'Number of times the patient has been pregnant.',
+            'Plasma glucose concentration after a 2-hour oral glucose tolerance test. Measures how well the body processes sugar.',
+            'Diastolic blood pressure (mm Hg). The pressure in the arteries when the heart rests between beats.',
+            'Triceps skin fold thickness (mm). Used to estimate body fat percentage.',
+            '2-Hour serum insulin (mu U/ml). Measures the amount of insulin in the blood.',
+            'Body Mass Index. A measure of body fat based on weight and height (kg/m²).',
+            'A genetic score that estimates the genetic risk of diabetes based on family history. Higher values indicate higher risk.',
+            'Patient age in years.'
         ]
     })
     

@@ -1,5 +1,5 @@
 {
-    "training_date": "2026-03-05T17:01:28.726891",
+    "training_date": "2026-03-05T17:22:31.099065",
     "model_type": "RandomForestClassifier",
     "dataset_size": 768,
     "cv_accuracy_mean": 0.765480474476876,

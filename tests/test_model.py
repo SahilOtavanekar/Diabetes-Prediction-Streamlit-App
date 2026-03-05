@@ -7,7 +7,7 @@ import sys
 # Add parent directory to path to import model.py
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
-from model import load_data, preprocess_data, find_best_threshold
+from src.model import load_data, preprocess_data, find_best_threshold
 
 def test_preprocess_data():
     # Create fake dataframe mimicking Pima dataset
