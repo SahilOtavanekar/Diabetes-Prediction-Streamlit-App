@@ -1,0 +1,20 @@
+{
+    "training_date": "2026-03-05T17:01:28.726891",
+    "model_type": "RandomForestClassifier",
+    "dataset_size": 768,
+    "cv_accuracy_mean": 0.765480474476876,
+    "cv_accuracy_std": 0.028738411688314498,
+    "test_accuracy": 0.7402597402597403,
+    "test_f1": 0.6923076923076923,
+    "optimal_threshold": 0.28492592546823975,
+    "feature_importance": {
+        "Pregnancies": 0.07306294723062885,
+        "Glucose": 0.29089144823545926,
+        "BloodPressure": 0.07360843812627459,
+        "SkinThickness": 0.0689757385573532,
+        "Insulin": 0.09529995972652229,
+        "BMI": 0.1623441562134629,
+        "DiabetesPedigreeFunction": 0.1209822140780453,
+        "Age": 0.11483509783225361
+    }
+}
