@@ -14,6 +14,7 @@ venv/
 # Machine Learning artifacts
 # =========================
 *.pkl
+!models/*.pkl
 *.joblib
 *.h5
 *.pt
